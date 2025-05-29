@@ -16,7 +16,9 @@ import androidx.fragment.app.Fragment;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.example.mobigait.R;
-import com.example.mobigait.ui.history.HistoryFragment;
+import com.example.mobigait.data.AnalysisResult;
+import com.example.mobigait.data.AppDatabase;
+import com.example.mobigait.data.GaitSession;
 import com.example.mobigait.utils.CustomSensorManager;
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.data.Entry;
@@ -138,7 +140,7 @@ public class AnalysisFragment extends Fragment implements SensorEventListener {
         android.util.Log.d("AnalysisFragment", "Calculated values: steps=" + stepCount +
                 ", duration=" + duration + ", frequency=" + frequency);
 
-        // Sauvegarde dans SharedPreferences
+        // Sauvegarde dans SharedPreferences pour les résultats
         SharedPreferences prefs = requireContext().getSharedPreferences("analysis_results", Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
 
@@ -150,14 +152,10 @@ public class AnalysisFragment extends Fragment implements SensorEventListener {
         editor.putFloat("last_speed", estimatedSpeed);
         editor.putFloat("last_symmetry", symmetry);
 
-        boolean saved = editor.commit(); // Utiliser commit() au lieu de apply() pour s'assurer que c'est sauvé
-        android.util.Log.d("AnalysisFragment", "Data saved: " + saved);
+        boolean saved = editor.commit();
+        android.util.Log.d("AnalysisFragment", "Results saved: " + saved);
 
-        // Vérifier que les données sont bien sauvées
-        long savedDate = prefs.getLong("last_analysis_date", 0);
-        android.util.Log.d("AnalysisFragment", "Verification - saved date: " + savedDate);
-
-        // Sauvegarder dans l'historique
+        // SUPPRIMER LA LIGNE DUPLIQUÉE - Sauvegarder dans l'historique UNE SEULE FOIS
         saveToHistory(endTime, duration, stepCount, frequency, averageStepLength, estimatedSpeed, symmetry);
 
         // Notifier que l'analyse est terminée
@@ -168,28 +166,73 @@ public class AnalysisFragment extends Fragment implements SensorEventListener {
 
     private void saveToHistory(long date, long duration, int stepCount, float frequency,
                                float stepLength, float speed, float symmetry) {
+        android.util.Log.d("AnalysisFragment", "Saving to history...");
+
         SharedPreferences historyPrefs = requireContext().getSharedPreferences("analysis_history", Context.MODE_PRIVATE);
         String historyJson = historyPrefs.getString("history_list", "[]");
 
+        android.util.Log.d("AnalysisFragment", "Current history JSON: " + historyJson);
+
         Gson gson = new Gson();
-        Type listType = new TypeToken<List<HistoryFragment.AnalysisResult>>(){}.getType();
-        List<HistoryFragment.AnalysisResult> historyList = gson.fromJson(historyJson, listType);
+        Type listType = new TypeToken<List<AnalysisResult>>(){}.getType();
+        List<AnalysisResult> historyList = gson.fromJson(historyJson, listType);
 
         if (historyList == null) {
             historyList = new ArrayList<>();
+            android.util.Log.d("AnalysisFragment", "Created new history list");
         }
 
-        historyList.add(0, new HistoryFragment.AnalysisResult(date, duration, stepCount,
-                frequency, stepLength, speed, symmetry));
-
-        if (historyList.size() > 50) {
-            historyList = historyList.subList(0, 50);
+        // VÉRIFIER SI L'ÉLÉMENT EXISTE DÉJÀ (éviter les doublons)
+        boolean alreadyExists = false;
+        for (AnalysisResult existing : historyList) {
+            if (Math.abs(existing.date - date) < 1000) { // Même timestamp à 1 seconde près
+                alreadyExists = true;
+                android.util.Log.d("AnalysisFragment", "Item already exists, skipping");
+                break;
+            }
         }
 
-        String updatedJson = gson.toJson(historyList);
-        historyPrefs.edit().putString("history_list", updatedJson).commit();
+        if (!alreadyExists) {
+            // Ajouter le nouveau résultat au début de la liste
+            AnalysisResult newResult = new AnalysisResult(date, duration, stepCount, frequency, stepLength, speed, symmetry);
+            historyList.add(0, newResult);
 
-        android.util.Log.d("AnalysisFragment", "History saved, total entries: " + historyList.size());
+            android.util.Log.d("AnalysisFragment", "Added new result. List size: " + historyList.size());
+
+            // Limiter à 50 entrées maximum
+            if (historyList.size() > 50) {
+                historyList = historyList.subList(0, 50);
+            }
+
+            // Sauvegarder la liste mise à jour
+            String updatedJson = gson.toJson(historyList);
+            boolean historySaved = historyPrefs.edit().putString("history_list", updatedJson).commit();
+
+            android.util.Log.d("AnalysisFragment", "History saved: " + historySaved);
+            android.util.Log.d("AnalysisFragment", "Updated history JSON: " + updatedJson);
+        }
+
+        // Sauvegarder aussi dans Room Database (optionnel)
+        saveToDatabase(date, duration, stepCount, frequency, stepLength, speed, symmetry);
+    }
+
+    private void saveToDatabase(long date, long duration, int stepCount, float frequency,
+                               float stepLength, float speed, float symmetry) {
+        AppDatabase database = AppDatabase.getDatabase(requireContext());
+
+        GaitSession session = new GaitSession();
+        session.setStartTime(date);
+        session.setEndTime(date + duration);
+        session.setStepFrequency(frequency);
+        session.setAverageStepLength(stepLength);
+        session.setEstimatedSpeed(speed);
+        session.setSymmetryScore(symmetry / 100f);
+
+        // Sauvegarder en arrière-plan
+        new Thread(() -> {
+            database.gaitSessionDao().insert(session);
+            android.util.Log.d("AnalysisFragment", "Session saved to database");
+        }).start();
     }
 
     @Override

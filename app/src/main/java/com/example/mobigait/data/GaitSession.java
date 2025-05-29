@@ -15,7 +15,7 @@ public class GaitSession {
     private float symmetryScore;
     private String notes;
 
-    public GaitSession(long startTime) {
+    public GaitSession() {
         this.startTime = startTime;
         this.endTime = 0;
         this.stepFrequency = 0;
@@ -42,4 +42,4 @@ public class GaitSession {
     public void setSymmetryScore(float symmetryScore) { this.symmetryScore = symmetryScore; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
-} 
+}

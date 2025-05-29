@@ -6,9 +6,9 @@ import androidx.room.PrimaryKey;
 
 @Entity(tableName = "gait_data",
         foreignKeys = @ForeignKey(entity = GaitSession.class,
-                                parentColumns = "id",
-                                childColumns = "sessionId",
-                                onDelete = ForeignKey.CASCADE))
+                parentColumns = "id",
+                childColumns = "sessionId",
+                onDelete = ForeignKey.CASCADE))
 public class GaitData {
     @PrimaryKey(autoGenerate = true)
     private long id;
@@ -22,7 +22,7 @@ public class GaitData {
     private float gyroZ;
 
     public GaitData(long sessionId, long timestamp, float accX, float accY, float accZ,
-                   float gyroX, float gyroY, float gyroZ) {
+                    float gyroX, float gyroY, float gyroZ) {
         this.sessionId = sessionId;
         this.timestamp = timestamp;
         this.accX = accX;
@@ -52,4 +52,4 @@ public class GaitData {
     public void setGyroY(float gyroY) { this.gyroY = gyroY; }
     public float getGyroZ() { return gyroZ; }
     public void setGyroZ(float gyroZ) { this.gyroZ = gyroZ; }
-} 
+}

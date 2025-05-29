@@ -21,6 +21,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.mobigait.R;
+import com.example.mobigait.data.AnalysisResult;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
@@ -36,7 +37,6 @@ public class HistoryFragment extends Fragment {
     private List<AnalysisResult> historyList;
     private Button selectAllButton;
     private Button deleteSelectedButton;
-    private Button cancelSelectionButton;
     private LinearLayout actionButtonsLayout;
     private TextView emptyMessage;
     private boolean isSelectionMode = false;
@@ -44,6 +44,7 @@ public class HistoryFragment extends Fragment {
     private BroadcastReceiver analysisResultReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            android.util.Log.d("HistoryFragment", "Received broadcast - reloading history");
             loadHistory();
         }
     };
@@ -56,7 +57,6 @@ public class HistoryFragment extends Fragment {
         recyclerView = view.findViewById(R.id.sessions_recycler_view);
         selectAllButton = view.findViewById(R.id.select_all_button);
         deleteSelectedButton = view.findViewById(R.id.delete_selected_button);
-        cancelSelectionButton = view.findViewById(R.id.cancel_selection_button);
         actionButtonsLayout = view.findViewById(R.id.action_buttons_layout);
         emptyMessage = view.findViewById(R.id.empty_message);
 
@@ -67,6 +67,7 @@ public class HistoryFragment extends Fragment {
         recyclerView.setAdapter(adapter);
 
         setupButtons();
+        removeDuplicates(); // Nettoyer les doublons existants
         loadHistory();
 
         return view;
@@ -84,10 +85,6 @@ public class HistoryFragment extends Fragment {
             if (!selectedItems.isEmpty()) {
                 showDeleteConfirmationDialog(selectedItems);
             }
-        });
-
-        cancelSelectionButton.setOnClickListener(v -> {
-            exitSelectionMode();
         });
     }
 
@@ -144,9 +141,11 @@ public class HistoryFragment extends Fragment {
 
     private void saveHistoryToPreferences() {
         SharedPreferences historyPrefs = requireContext().getSharedPreferences("analysis_history", Context.MODE_PRIVATE);
+        historyPrefs.edit().clear().apply();
         Gson gson = new Gson();
         String updatedJson = gson.toJson(historyList);
         historyPrefs.edit().putString("history_list", updatedJson).apply();
+        android.util.Log.d("HistoryFragment", "History saved after deletion");
     }
 
     private void updateButtonStates() {
@@ -163,6 +162,7 @@ public class HistoryFragment extends Fragment {
         if (historyList.isEmpty()) {
             emptyMessage.setVisibility(View.VISIBLE);
             recyclerView.setVisibility(View.GONE);
+            actionButtonsLayout.setVisibility(View.GONE);
         } else {
             emptyMessage.setVisibility(View.GONE);
             recyclerView.setVisibility(View.VISIBLE);
@@ -172,6 +172,7 @@ public class HistoryFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
+        android.util.Log.d("HistoryFragment", "onResume - registering receiver");
         LocalBroadcastManager.getInstance(requireContext())
                 .registerReceiver(analysisResultReceiver,
                         new IntentFilter("ANALYSIS_COMPLETED"));
@@ -181,13 +182,20 @@ public class HistoryFragment extends Fragment {
     @Override
     public void onPause() {
         super.onPause();
-        LocalBroadcastManager.getInstance(requireContext())
-                .unregisterReceiver(analysisResultReceiver);
+        android.util.Log.d("HistoryFragment", "onPause - unregistering receiver");
+        try {
+            LocalBroadcastManager.getInstance(requireContext())
+                    .unregisterReceiver(analysisResultReceiver);
+        } catch (Exception e) {
+            android.util.Log.e("HistoryFragment", "Error unregistering receiver", e);
+        }
     }
 
     private void loadHistory() {
         SharedPreferences prefs = requireContext().getSharedPreferences("analysis_history", Context.MODE_PRIVATE);
         String historyJson = prefs.getString("history_list", "[]");
+
+        android.util.Log.d("HistoryFragment", "Loading history JSON: " + historyJson);
 
         Gson gson = new Gson();
         Type listType = new TypeToken<List<AnalysisResult>>(){}.getType();
@@ -197,31 +205,48 @@ public class HistoryFragment extends Fragment {
             historyList.clear();
             historyList.addAll(savedHistory);
             adapter.updateData(historyList);
+            android.util.Log.d("HistoryFragment", "Loaded " + historyList.size() + " items");
+        } else {
+            android.util.Log.d("HistoryFragment", "No history found");
         }
 
         updateButtonStates();
         updateEmptyState();
     }
 
-    // Classe pour représenter un résultat d'analyse
-    public static class AnalysisResult {
-        public long date;
-        public long duration;
-        public int stepCount;
-        public float frequency;
-        public float stepLength;
-        public float speed;
-        public float symmetry;
+    private void removeDuplicates() {
+        SharedPreferences prefs = requireContext().getSharedPreferences("analysis_history", Context.MODE_PRIVATE);
+        String historyJson = prefs.getString("history_list", "[]");
 
-        public AnalysisResult(long date, long duration, int stepCount, float frequency,
-                              float stepLength, float speed, float symmetry) {
-            this.date = date;
-            this.duration = duration;
-            this.stepCount = stepCount;
-            this.frequency = frequency;
-            this.stepLength = stepLength;
-            this.speed = speed;
-            this.symmetry = symmetry;
+        Gson gson = new Gson();
+        Type listType = new TypeToken<List<AnalysisResult>>(){}.getType();
+        List<AnalysisResult> historyList = gson.fromJson(historyJson, listType);
+
+        if (historyList != null && historyList.size() > 0) {
+            // Supprimer les doublons basés sur la date (à 1 seconde près)
+            List<AnalysisResult> uniqueList = new ArrayList<>();
+            for (AnalysisResult item : historyList) {
+                boolean isDuplicate = false;
+                for (AnalysisResult unique : uniqueList) {
+                    if (Math.abs(unique.date - item.date) < 1000) {
+                        isDuplicate = true;
+                        break;
+                    }
+                }
+                if (!isDuplicate) {
+                    uniqueList.add(item);
+                }
+            }
+
+            if (uniqueList.size() != historyList.size()) {
+                // Sauvegarder la liste nettoyée
+                String cleanedJson = gson.toJson(uniqueList);
+                prefs.edit().putString("history_list", cleanedJson).apply();
+                android.util.Log.d("HistoryFragment", "Removed " + (historyList.size() - uniqueList.size()) + " duplicates");
+
+                // Recharger l'historique
+                loadHistory();
+            }
         }
     }
 
@@ -291,8 +316,8 @@ public class HistoryFragment extends Fragment {
 
         public List<AnalysisResult> getSelectedItems() {
             List<AnalysisResult> selected = new ArrayList<>();
-            for (int i = 0; i < selectedItems.size(); i++) {
-                if (i < selectedItems.size() && selectedItems.get(i)) {
+            for (int i = 0; i < selectedItems.size() && i < results.size(); i++) {
+                if (selectedItems.get(i)) {
                     selected.add(results.get(i));
                 }
             }

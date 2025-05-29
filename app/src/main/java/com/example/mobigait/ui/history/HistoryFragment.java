@@ -37,6 +37,7 @@ public class HistoryFragment extends Fragment {
     private List<AnalysisResult> historyList;
     private Button selectAllButton;
     private Button deleteSelectedButton;
+    private Button cancelSelectionButton;
     private LinearLayout actionButtonsLayout;
     private TextView emptyMessage;
     private boolean isSelectionMode = false;
@@ -57,6 +58,7 @@ public class HistoryFragment extends Fragment {
         recyclerView = view.findViewById(R.id.sessions_recycler_view);
         selectAllButton = view.findViewById(R.id.select_all_button);
         deleteSelectedButton = view.findViewById(R.id.delete_selected_button);
+        cancelSelectionButton = view.findViewById(R.id.cancel_selection_button);
         actionButtonsLayout = view.findViewById(R.id.action_buttons_layout);
         emptyMessage = view.findViewById(R.id.empty_message);
 
@@ -86,6 +88,7 @@ public class HistoryFragment extends Fragment {
                 showDeleteConfirmationDialog(selectedItems);
             }
         });
+        cancelSelectionButton.setOnClickListener(v -> exitSelectionMode());
     }
 
     private void enterSelectionMode() {
@@ -104,18 +107,18 @@ public class HistoryFragment extends Fragment {
 
     private void showDeleteConfirmationDialog(List<AnalysisResult> selectedItems) {
         String message = selectedItems.size() == 1 ?
-            "Êtes-vous sûr de vouloir supprimer cette analyse ?" :
-            "Êtes-vous sûr de vouloir supprimer " + selectedItems.size() + " analyses ?";
+                "Êtes-vous sûr de vouloir supprimer cette analyse ?" :
+                "Êtes-vous sûr de vouloir supprimer " + selectedItems.size() + " analyses ?";
 
         new AlertDialog.Builder(requireContext())
-            .setTitle("Confirmer la suppression")
-            .setMessage(message)
-            .setPositiveButton("Supprimer", (dialog, which) -> {
-                deleteSelectedItems(selectedItems);
-                exitSelectionMode();
-            })
-            .setNegativeButton("Annuler", null)
-            .show();
+                .setTitle("Confirmer la suppression")
+                .setMessage(message)
+                .setPositiveButton("Supprimer", (dialog, which) -> {
+                    deleteSelectedItems(selectedItems);
+                    exitSelectionMode();
+                })
+                .setNegativeButton("Annuler", null)
+                .show();
     }
 
     private void deleteSelectedItems(List<AnalysisResult> selectedItems) {
@@ -127,16 +130,16 @@ public class HistoryFragment extends Fragment {
 
     private void deleteItem(AnalysisResult item) {
         new AlertDialog.Builder(requireContext())
-            .setTitle("Confirmer la suppression")
-            .setMessage("Êtes-vous sûr de vouloir supprimer cette analyse ?")
-            .setPositiveButton("Supprimer", (dialog, which) -> {
-                historyList.remove(item);
-                saveHistoryToPreferences();
-                adapter.updateData(historyList);
-                updateEmptyState();
-            })
-            .setNegativeButton("Annuler", null)
-            .show();
+                .setTitle("Confirmer la suppression")
+                .setMessage("Êtes-vous sûr de vouloir supprimer cette analyse ?")
+                .setPositiveButton("Supprimer", (dialog, which) -> {
+                    historyList.remove(item);
+                    saveHistoryToPreferences();
+                    adapter.updateData(historyList);
+                    updateEmptyState();
+                })
+                .setNegativeButton("Annuler", null)
+                .show();
     }
 
     private void saveHistoryToPreferences() {
@@ -152,10 +155,10 @@ public class HistoryFragment extends Fragment {
         int selectedCount = adapter.getSelectedCount();
         deleteSelectedButton.setEnabled(selectedCount > 0);
         deleteSelectedButton.setText(selectedCount > 0 ?
-            "Supprimer (" + selectedCount + ")" : "Supprimer");
+                "Supprimer (" + selectedCount + ")" : "Supprimer");
 
         selectAllButton.setText(adapter.areAllSelected() ?
-            "Tout désélectionner" : "Tout sélectionner");
+                "Tout désélectionner" : "Tout sélectionner");
     }
 
     private void updateEmptyState() {

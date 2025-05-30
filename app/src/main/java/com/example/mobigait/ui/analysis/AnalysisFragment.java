@@ -16,6 +16,7 @@ import androidx.fragment.app.Fragment;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.example.mobigait.R;
+import com.example.mobigait.data.AnalysisResult;
 import com.example.mobigait.data.AppDatabase;
 import com.example.mobigait.data.GaitSession;
 import com.example.mobigait.utils.CustomSensorManager;
@@ -23,8 +24,12 @@ import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 
+import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.List;
 
 public class AnalysisFragment extends Fragment implements SensorEventListener {
     private LineChart chart;
@@ -115,18 +120,19 @@ public class AnalysisFragment extends Fragment implements SensorEventListener {
         long endTime = System.currentTimeMillis();
         long duration = endTime - startTime;
 
-        // S'assurer qu'on a au moins une durée minimale
+        // Ensure minimum duration
         if (duration < 1000) {
             duration = 5000;
         }
 
         float durationSeconds = duration / 1000f;
 
-        // S'assurer qu'on a des pas détectés
+        // Ensure we have detected steps
         if (stepCount == 0) {
             stepCount = Math.max(5, sensorDataCount / 15);
         }
 
+        // Calculate analysis metrics
         float frequency = stepCount / durationSeconds;
         float averageStepLength = 0.65f + (float)(Math.random() * 0.2);
         float estimatedSpeed = frequency * averageStepLength;
@@ -135,7 +141,7 @@ public class AnalysisFragment extends Fragment implements SensorEventListener {
         android.util.Log.d("AnalysisFragment", "Calculated values: steps=" + stepCount +
                 ", duration=" + duration + ", frequency=" + frequency);
 
-        // Sauvegarde dans SharedPreferences pour les résultats (dernière analyse)
+        // Save to SharedPreferences for last analysis
         SharedPreferences prefs = requireContext().getSharedPreferences("analysis_results", Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
 
@@ -146,17 +152,44 @@ public class AnalysisFragment extends Fragment implements SensorEventListener {
         editor.putFloat("last_step_length", averageStepLength);
         editor.putFloat("last_speed", estimatedSpeed);
         editor.putFloat("last_symmetry", symmetry);
+        editor.apply();
 
-        boolean saved = editor.commit();
-        android.util.Log.d("AnalysisFragment", "Results saved: " + saved);
+        // Save to history
+        SharedPreferences historyPrefs = requireContext().getSharedPreferences("analysis_history", Context.MODE_PRIVATE);
+        Gson gson = new Gson();
 
-        // Sauvegarder dans Room Database pour l'historique
+        // Load existing history
+        String historyJson = historyPrefs.getString("history_list", "[]");
+        Type listType = new TypeToken<List<AnalysisResult>>(){}.getType();
+        List<AnalysisResult> historyList = gson.fromJson(historyJson, listType);
+        if (historyList == null) {
+            historyList = new ArrayList<>();
+        }
+
+        // Add new result
+        AnalysisResult newResult = new AnalysisResult(
+                endTime,
+                duration,
+                stepCount,
+                frequency,
+                averageStepLength,
+                estimatedSpeed,
+                symmetry
+        );
+        historyList.add(newResult);
+
+        // Save updated list
+        String updatedJson = gson.toJson(historyList);
+        historyPrefs.edit().putString("history_list", updatedJson).apply();
+
+        android.util.Log.d("AnalysisFragment", "Added new result to history, total items: " + historyList.size());
+
+        // Save to Room database
         saveToRoomDatabase(startTime, endTime, stepCount, frequency, averageStepLength, estimatedSpeed, symmetry);
 
-        // Notifier que l'analyse est terminée
+        // Notify analysis completed
         Intent intent = new Intent("ANALYSIS_COMPLETED");
         LocalBroadcastManager.getInstance(requireContext()).sendBroadcast(intent);
-        android.util.Log.d("AnalysisFragment", "Broadcast sent");
     }
 
     private void saveToRoomDatabase(long startTime, long endTime, int stepCount, float frequency,
